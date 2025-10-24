@@ -72,7 +72,7 @@ aggregated logs and writes them to a file system; the CLI sends commands
 to the hub, which delivers them to probes on their next upload.  All
 communications between components outside the same host use HTTPS.
 
-![System architecture]({{file:moon_blokz_radio_test_arch.png}})
+![System architecture](moon_blokz_radio_test_arch.png)
 
 ---
 
