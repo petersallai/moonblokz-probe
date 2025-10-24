@@ -1,0 +1,31 @@
+[Unit]
+Description=MoonBlokz Probe - RP2040 to Telemetry Hub Bridge
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/moonblokz-probe
+ExecStart=/home/pi/moonblokz-probe/target/release/moonblokz-probe --config /home/pi/moonblokz-probe/config.toml
+
+# Restart policy
+Restart=always
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=moonblokz-probe
+
+# Resource limits (optional)
+# MemoryLimit=256M
+# CPUQuota=50%
+
+# Security (optional hardening)
+# NoNewPrivileges=true
+# PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

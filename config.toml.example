@@ -1,0 +1,28 @@
+# MoonBlokz Probe Configuration
+
+# USB serial port path
+usb_port = "/dev/ttyACM0"
+
+# Telemetry hub server URL
+server_url = "https://your-telemetry-hub.fermyon.app"
+
+# API key for authentication with the hub
+api_key = "your-api-key-here"
+
+# Unique node identifier
+node_id = 21
+
+# Node firmware update URL (base URL without /version.json)
+node_firmware_url = "https://example.com/firmware/node"
+
+# Probe firmware update URL (base URL without /version.json)
+probe_firmware_url = "https://example.com/firmware/probe"
+
+# Upload interval in seconds (default: 300)
+upload_interval_seconds = 300
+
+# Maximum buffer size (number of log entries, default: 10000)
+buffer_size = 10000
+
+# Initial filter string (empty means no filtering)
+filter_string = ""
