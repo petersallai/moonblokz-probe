@@ -1,0 +1,19 @@
+[Unit]
+Description=MoonBlokz Telemetry Probe
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/moonblokz-probe
+ExecStart=/home/pi/moonblokz-probe/moonblokz-probe --config /home/pi/moonblokz-probe/config.toml
+Restart=always
+RestartSec=10
+Environment=RUST_LOG=info
+
+# Security settings
+NoNewPrivileges=false
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

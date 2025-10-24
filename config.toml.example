@@ -1,0 +1,13 @@
+# Path to the node's serial port
+usb_port = "/dev/ttyACM0"
+
+# Central telemetry server details
+server_url = "https://telemetry.moonblokz.com/api/v1/data"
+api_key = "YOUR_SECRET_API_KEY"
+
+# Unique identifier for this node
+node_id = "node-alpha-001"
+
+# URLs for firmware management
+node_firmware_url = "https://firmware.moonblokz.com/node"
+probe_firmware_url = "https://firmware.moonblokz.com/probe"
