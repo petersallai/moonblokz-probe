@@ -8,6 +8,7 @@ mod error;
 
 use anyhow::Result;
 use clap::Parser;
+use log::{error, info};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -31,10 +32,29 @@ async fn main() -> Result<()> {
     
     // Load configuration
     let config = Config::load(&args.config)?;
-    println!("Loaded configuration from {:?}", args.config);
-    println!("Node ID: {}", config.node_id);
-    println!("USB Port: {}", config.usb_port);
-    println!("Server URL: {}", config.server_url);
+    
+    // Initialize logger with level from config
+    let log_level = match config.log_level.to_lowercase().as_str() {
+        "error" => log::LevelFilter::Error,
+        "warn" => log::LevelFilter::Warn,
+        "info" => log::LevelFilter::Info,
+        "debug" => log::LevelFilter::Debug,
+        "trace" => log::LevelFilter::Trace,
+        _ => log::LevelFilter::Info,
+    };
+    
+    simple_logger::SimpleLogger::new()
+        .with_level(log_level)
+        .with_utc_timestamps()
+        .init()
+        .unwrap();
+    
+    info!("Loaded configuration from {:?}", args.config);
+    info!("Node ID: {}", config.node_id);
+    info!("USB Port: {}", config.usb_port);
+    info!("Server URL: {}", config.server_url);
+    info!("Upload interval: {}s", config.upload_interval_seconds);
+    info!("Buffer size: {}", config.buffer_size);
     
     // Shared state
     let buffer = Arc::new(RwLock::new(Vec::<LogEntry>::new()));
@@ -74,16 +94,16 @@ async fn main() -> Result<()> {
     // Wait for any task to complete (they should run indefinitely)
     tokio::select! {
         result = usb_task => {
-            eprintln!("USB collector task ended: {:?}", result);
+            error!("USB collector task ended: {:?}", result);
         }
         result = sync_task => {
-            eprintln!("Telemetry sync task ended: {:?}", result);
+            error!("Telemetry sync task ended: {:?}", result);
         }
         result = node_update_task => {
-            eprintln!("Node update task ended: {:?}", result);
+            error!("Node update task ended: {:?}", result);
         }
         result = probe_update_task => {
-            eprintln!("Probe update task ended: {:?}", result);
+            error!("Probe update task ended: {:?}", result);
         }
     }
     

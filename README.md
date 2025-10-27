@@ -33,6 +33,7 @@ A headless Rust daemon that runs on a Raspberry Pi Zero and acts as the bridge b
    - `upload_interval_seconds`: Interval between telemetry uploads (default: 300)
    - `buffer_size`: Maximum number of log entries to hold in memory (default: 10,000)
    - `filter_string`: Initial substring filter for logs (empty = no filtering)
+   - `log_level`: Log level for probe application logging - error, warn, info, debug, trace (default: info)
 
 ## Building
 
@@ -53,6 +54,22 @@ Or use the default config location:
 ```bash
 ./target/release/moonblokz-probe
 ```
+
+### Log Levels
+
+You can control the verbosity of the probe's own logging (not the node logs) in the `config.toml` file:
+
+```toml
+# Log level (error, warn, info, debug, trace, default: info)
+log_level = "debug"
+```
+
+Available log levels (from least to most verbose):
+- `error` - Only errors
+- `warn` - Warnings and errors
+- `info` - Informational messages, warnings, and errors (default)
+- `debug` - Debug information plus all above
+- `trace` - Trace-level details plus all above
 
 ## Running as a Service
 

@@ -114,8 +114,9 @@ overridden via the `--config` command‑line option. Key settings include:
 | `node_firmware_url` | `string` | Base URL for node firmware (without the ending: `/version.json`). |
 | `probe_firmware_url` | `string` | Base URL for probe firmware (without the ending: `/version.json`). |
 | `upload_interval_seconds` | `u64` (optional) | Interval between telemetry uploads in seconds; defaults to 300. |
-| `buffer_size` | `usize` (optional) | Maximum number of log entries to hold in memory; defaults to 10 000. |
+| `buffer_size` | `usize` (optional) | Maximum number of log entries to hold in memory; defaults to 10 000. |
 | `filter_string` | `string` (optional) | Initial substring filter; an empty string means no filtering. |
+| `log_level` | `string` (optional) | Log level for probe application logging (error, warn, info, debug, trace); defaults to "info". |
 
 ### Processes
 

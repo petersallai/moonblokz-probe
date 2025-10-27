@@ -2,6 +2,7 @@ use crate::config::Config;
 use crate::log_entry::LogEntry;
 use anyhow::Result;
 use chrono::Utc;
+use log::{debug, error, info};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::RwLock;
@@ -21,11 +22,11 @@ pub async fn run(
     loop {
         match connect_and_read(&config, &buffer, &filter_string).await {
             Ok(_) => {
-                eprintln!("USB connection closed normally");
+                info!("USB connection closed normally");
                 backoff_ms = INITIAL_BACKOFF_MS;
             }
             Err(e) => {
-                eprintln!("USB connection error: {}. Retrying in {}ms...", e, backoff_ms);
+                error!("USB connection error: {}. Retrying in {}ms...", e, backoff_ms);
                 sleep(Duration::from_millis(backoff_ms)).await;
                 backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
             }
@@ -42,12 +43,13 @@ async fn connect_and_read(
     let port = tokio_serial::new(&config.usb_port, 115200)
         .open_native_async()?;
     
-    println!("Connected to USB port: {}", config.usb_port);
+    info!("Connected to USB port: {}", config.usb_port);
     
     let reader = BufReader::new(port);
     let mut lines = reader.lines();
     
     while let Some(line) = lines.next_line().await? {
+        debug!("Received line from USB: {}", line);
         // Generate timestamp in ISO 8601 UTC format
         let timestamp = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
         

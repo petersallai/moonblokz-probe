@@ -110,7 +110,10 @@ probe_firmware_url = "https://example.com/firmware/probe"
 upload_interval_seconds = 300
 buffer_size = 10000
 filter_string = ""
+log_level = "info"
 ```
+
+The `log_level` setting controls the verbosity of the probe's own logging (not the node logs). Available levels: error, warn, info, debug, trace.
 
 ## Building and Running
 
@@ -124,6 +127,8 @@ cargo build --release
 # Run with custom config
 ./target/release/moonblokz-probe --config /path/to/config.toml
 ```
+
+To change the log level, edit the `log_level` setting in `config.toml` and restart the probe.
 
 ## Deployment as Service
 

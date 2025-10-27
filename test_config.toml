@@ -1,0 +1,12 @@
+# Test configuration for MoonBlokz Probe
+
+usb_port = "/dev/ttyACM0"
+server_url = "https://test-hub.example.com"
+api_key = "test-key"
+node_id = 99
+node_firmware_url = "https://example.com/firmware/node"
+probe_firmware_url = "https://example.com/firmware/probe"
+upload_interval_seconds = 60
+buffer_size = 1000
+filter_string = ""
+log_level = "debug"

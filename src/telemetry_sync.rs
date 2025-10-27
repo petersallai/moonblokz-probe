@@ -2,6 +2,7 @@ use crate::command_executor::{self, Command};
 use crate::config::Config;
 use crate::log_entry::LogEntry;
 use anyhow::Result;
+use log::{debug, error, info, warn};
 use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -37,7 +38,7 @@ pub async fn run(
                 backoff_ms = INITIAL_BACKOFF_MS;
             }
             Err(e) => {
-                eprintln!("Telemetry upload error: {}. Retrying in {}ms...", e, backoff_ms);
+                error!("Telemetry upload error: {}. Retrying in {}ms...", e, backoff_ms);
                 sleep(Duration::from_millis(backoff_ms)).await;
                 backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
             }
@@ -57,6 +58,8 @@ async fn upload_telemetry(
         buf.clone()
     };
     
+    debug!("Uploading {} log entries to hub", logs.len());
+    
     let request_body = UploadRequest { logs };
     
     // Send request
@@ -73,15 +76,17 @@ async fn upload_telemetry(
     let status = response.status();
     
     if !status.is_success() {
-        eprintln!("Upload failed with status: {}", status);
+        warn!("Upload failed with status: {}", status);
         return Err(anyhow::anyhow!("Non-success status: {}", status));
     }
+    
+    info!("Successfully uploaded telemetry");
     
     // Parse response commands
     let commands: Vec<Command> = match response.json().await {
         Ok(cmds) => cmds,
         Err(e) => {
-            eprintln!("Failed to parse response commands: {}. Logs considered delivered.", e);
+            warn!("Failed to parse response commands: {}. Logs considered delivered.", e);
             // Clear buffer anyway since logs were delivered
             buffer.write().await.clear();
             return Ok(());
@@ -94,7 +99,7 @@ async fn upload_telemetry(
     // Execute commands
     for command in commands {
         if let Err(e) = command_executor::execute_command(command, config, filter_string).await {
-            eprintln!("Command execution error: {}", e);
+            error!("Command execution error: {}", e);
         }
     }
     

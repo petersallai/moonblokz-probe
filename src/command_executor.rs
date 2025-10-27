@@ -1,6 +1,7 @@
 use crate::config::Config;
 use crate::update_manager;
 use anyhow::Result;
+use log::{info, warn};
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
@@ -43,7 +44,7 @@ pub async fn execute_command(
     config: &Config,
     filter_string: &Arc<RwLock<String>>,
 ) -> Result<()> {
-    println!("Executing command: {}", command.command);
+    info!("Executing command: {}", command.command);
     
     let params: CommandParameters = serde_json::from_value(command.parameters)
         .unwrap_or_else(|_| CommandParameters {
@@ -63,7 +64,7 @@ pub async fn execute_command(
             // TODO: Implement dynamic scheduling based on time windows
             // For now, just use active_period as the new interval
             if params.active_period > 0 {
-                println!("Setting upload interval to {} seconds", params.active_period);
+                info!("Setting upload interval to {} seconds", params.active_period);
                 // This would need to be passed back to the main loop
                 // For now, just log it
             }
@@ -83,12 +84,13 @@ pub async fn execute_command(
                 "WARN" => "/LW",
                 "ERROR" => "/LE",
                 _ => {
-                    eprintln!("Unknown log level: {}", level);
+                    warn!("Unknown log level: {}", level);
                     return Ok(());
                 }
             };
             
             send_usb_command(&config.usb_port, usb_command).await?;
+            info!("Set log level to {}", level);
         }
         
         "set_filter" => {
@@ -98,7 +100,7 @@ pub async fn execute_command(
                 params.value
             };
             
-            println!("Setting filter to: {}", new_filter);
+            info!("Setting filter to: {}", new_filter);
             *filter_string.write().await = new_filter;
         }
         
@@ -111,25 +113,25 @@ pub async fn execute_command(
         }
         
         "update_node" => {
-            println!("Triggering node firmware update...");
+            info!("Triggering node firmware update...");
             // In a real implementation, we would signal the update manager
             // For now, the update manager runs on its own schedule
         }
         
         "update_probe" => {
-            println!("Triggering probe self-update...");
+            info!("Triggering probe self-update...");
             // In a real implementation, we would signal the update manager
             // For now, the update manager runs on its own schedule
         }
         
         "reboot_probe" => {
-            println!("Rebooting probe...");
+            info!("Rebooting probe...");
             tokio::time::sleep(Duration::from_secs(2)).await;
             update_manager::reboot_system().await?;
         }
         
         _ => {
-            eprintln!("Unknown command: {}", command.command);
+            warn!("Unknown command: {}", command.command);
         }
     }
     

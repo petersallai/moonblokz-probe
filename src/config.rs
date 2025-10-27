@@ -16,6 +16,8 @@ pub struct Config {
     pub buffer_size: usize,
     #[serde(default = "default_filter_string")]
     pub filter_string: String,
+    #[serde(default = "default_log_level")]
+    pub log_level: String,
 }
 
 fn default_upload_interval() -> u64 {
@@ -28,6 +30,10 @@ fn default_buffer_size() -> usize {
 
 fn default_filter_string() -> String {
     String::new()
+}
+
+fn default_log_level() -> String {
+    "info".to_string()
 }
 
 impl Config {

@@ -1,5 +1,6 @@
 use crate::config::Config;
 use anyhow::Result;
+use log::{debug, error, info, warn};
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::fs;
@@ -21,14 +22,14 @@ struct VersionInfo {
 pub async fn run_node_update(config: Arc<Config>) -> Result<()> {
     // Check on startup
     if let Err(e) = check_and_update_node_firmware(&config).await {
-        eprintln!("Node firmware update check failed: {}", e);
+        error!("Node firmware update check failed: {}", e);
     }
     
     loop {
         sleep(Duration::from_secs(CHECK_INTERVAL_SECONDS)).await;
         
         if let Err(e) = check_and_update_node_firmware(&config).await {
-            eprintln!("Node firmware update check failed: {}", e);
+            error!("Node firmware update check failed: {}", e);
         }
     }
 }
@@ -36,14 +37,14 @@ pub async fn run_node_update(config: Arc<Config>) -> Result<()> {
 pub async fn run_probe_update(config: Arc<Config>) -> Result<()> {
     // Check on startup
     if let Err(e) = check_and_update_probe(&config).await {
-        eprintln!("Probe update check failed: {}", e);
+        error!("Probe update check failed: {}", e);
     }
     
     loop {
         sleep(Duration::from_secs(CHECK_INTERVAL_SECONDS)).await;
         
         if let Err(e) = check_and_update_probe(&config).await {
-            eprintln!("Probe update check failed: {}", e);
+            error!("Probe update check failed: {}", e);
         }
     }
 }
@@ -57,13 +58,13 @@ async fn check_and_update_node_firmware(config: &Config) -> Result<()> {
     // Determine current version
     let current_version = get_current_node_version().await?;
     
-    println!("Node firmware - Current: {}, Latest: {}", current_version, version_info.version);
+    info!("Node firmware - Current: {}, Latest: {}", current_version, version_info.version);
     
     if version_info.version <= current_version {
         return Ok(());
     }
     
-    println!("Updating node firmware to version {}...", version_info.version);
+    info!("Updating node firmware to version {}...", version_info.version);
     
     // Download new firmware
     let firmware_url = format!("{}/moonblokz_{}.uf2", config.node_firmware_url, version_info.version);
@@ -74,7 +75,7 @@ async fn check_and_update_node_firmware(config: &Config) -> Result<()> {
     let computed_crc = crc32fast::hash(&firmware_data);
     let expected_crc = u32::from_str_radix(&version_info.crc32, 16)
         .unwrap_or_else(|_| {
-            eprintln!("Warning: Could not parse CRC32, skipping verification");
+            warn!("Could not parse CRC32, skipping verification");
             computed_crc
         });
     
@@ -87,7 +88,7 @@ async fn check_and_update_node_firmware(config: &Config) -> Result<()> {
     fs::write(&temp_file, &firmware_data).await?;
     
     // Enter bootloader mode
-    println!("Entering bootloader mode...");
+    info!("Entering bootloader mode...");
     send_usb_command(&config.usb_port, "/BS").await?;
     
     // Wait for bootloader device to appear
@@ -98,7 +99,7 @@ async fn check_and_update_node_firmware(config: &Config) -> Result<()> {
     // For now, assume it's mounted at a known location
     let bootloader_path = "/media/RPI-RP2";
     if let Err(e) = fs::copy(&temp_file, format!("{}/firmware.uf2", bootloader_path)).await {
-        eprintln!("Failed to copy firmware to bootloader: {}", e);
+        error!("Failed to copy firmware to bootloader: {}", e);
         return Err(e.into());
     }
     
@@ -113,7 +114,7 @@ async fn check_and_update_node_firmware(config: &Config) -> Result<()> {
     // Clean up old versions
     cleanup_old_node_versions(version_info.version).await?;
     
-    println!("Node firmware updated successfully to version {}", version_info.version);
+    info!("Node firmware updated successfully to version {}", version_info.version);
     
     Ok(())
 }
@@ -127,13 +128,13 @@ async fn check_and_update_probe(config: &Config) -> Result<()> {
     // Determine current version
     let current_version = get_current_probe_version().await?;
     
-    println!("Probe - Current: {}, Latest: {}", current_version, version_info.version);
+    info!("Probe - Current: {}, Latest: {}", current_version, version_info.version);
     
     if version_info.version <= current_version {
         return Ok(());
     }
     
-    println!("Updating probe to version {}...", version_info.version);
+    info!("Updating probe to version {}...", version_info.version);
     
     // Download new binary
     let binary_url = format!("{}/moonblokz_probe_{}", config.probe_firmware_url, version_info.version);
@@ -145,7 +146,7 @@ async fn check_and_update_probe(config: &Config) -> Result<()> {
         let computed_crc = crc32fast::hash(&binary_data);
         let expected_crc = u32::from_str_radix(&version_info.checksum, 16)
             .unwrap_or_else(|_| {
-                eprintln!("Warning: Could not parse checksum, skipping verification");
+                warn!("Could not parse checksum, skipping verification");
                 computed_crc
             });
         
@@ -158,6 +159,8 @@ async fn check_and_update_probe(config: &Config) -> Result<()> {
     fs::create_dir_all(DEPLOYED_DIR).await?;
     let new_binary = format!("{}/moonblokz_probe_{}", DEPLOYED_DIR, version_info.version);
     fs::write(&new_binary, &binary_data).await?;
+    
+    debug!("Wrote new probe binary to {}", new_binary);
     
     // Set executable bit
     #[cfg(unix)]
@@ -186,8 +189,8 @@ async fn check_and_update_probe(config: &Config) -> Result<()> {
     // Clean up old versions
     cleanup_old_probe_versions(version_info.version).await?;
     
-    println!("Probe updated successfully to version {}", version_info.version);
-    println!("Rebooting in 5 seconds...");
+    info!("Probe updated successfully to version {}", version_info.version);
+    info!("Rebooting in 5 seconds...");
     sleep(Duration::from_secs(5)).await;
     
     // Reboot
@@ -253,7 +256,7 @@ async fn cleanup_old_node_versions(current: u32) -> Result<()> {
             if let Ok(version) = version_str.parse::<u32>() {
                 if version < current {
                     fs::remove_file(entry.path()).await?;
-                    println!("Removed old node firmware version {}", version);
+                    info!("Removed old node firmware version {}", version);
                 }
             }
         }
@@ -275,7 +278,7 @@ async fn cleanup_old_probe_versions(current: u32) -> Result<()> {
             if let Ok(version) = version_str.parse::<u32>() {
                 if version < current {
                     fs::remove_file(entry.path()).await?;
-                    println!("Removed old probe version {}", version);
+                    info!("Removed old probe version {}", version);
                 }
             }
         }
