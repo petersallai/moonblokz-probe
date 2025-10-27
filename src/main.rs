@@ -1,5 +1,6 @@
 mod config;
 mod log_entry;
+mod usb_manager;
 mod usb_collector;
 mod telemetry_sync;
 mod update_manager;
@@ -11,11 +12,12 @@ use clap::Parser;
 use log::{error, info};
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{mpsc, RwLock};
 use tokio::time::Duration;
 
 use config::Config;
 use log_entry::LogEntry;
+use usb_manager::{UsbManager, UsbHandle};
 
 #[derive(Parser, Debug)]
 #[command(name = "moonblokz-probe")]
@@ -56,6 +58,13 @@ async fn main() -> Result<()> {
     info!("Upload interval: {}s", config.upload_interval_seconds);
     info!("Buffer size: {}", config.buffer_size);
     
+    // Create channels for USB communication
+    let (usb_cmd_tx, usb_cmd_rx) = mpsc::channel(32);
+    let (usb_msg_tx, usb_msg_rx) = mpsc::channel(100);
+    
+    // Create USB handle for sending commands
+    let usb_handle = UsbHandle::new(usb_cmd_tx);
+    
     // Shared state
     let buffer = Arc::new(RwLock::new(Vec::<LogEntry>::new()));
     let filter_string = Arc::new(RwLock::new(config.filter_string.clone()));
@@ -70,15 +79,22 @@ async fn main() -> Result<()> {
     let config_usb = Arc::clone(&config_sync);
     let config_node_update = Arc::clone(&config_sync);
     let config_probe_update = Arc::clone(&config_sync);
+    let usb_handle_cmd = usb_handle.clone();
     
-    // Spawn USB log collector task
+    // Spawn USB manager task
+    let usb_manager = UsbManager::new(config.usb_port.clone(), usb_cmd_rx, usb_msg_tx);
     let usb_task = tokio::spawn(async move {
-        usb_collector::run(config_usb, buffer_usb, filter_usb).await
+        usb_manager.run().await
+    });
+    
+    // Spawn USB log collector task (receives messages from USB manager)
+    let collector_task = tokio::spawn(async move {
+        usb_collector::run(config_usb, buffer_usb, filter_usb, usb_msg_rx).await
     });
     
     // Spawn telemetry sync task
     let sync_task = tokio::spawn(async move {
-        telemetry_sync::run(config_sync, buffer_sync, interval_sync, filter_string).await
+        telemetry_sync::run(config_sync, buffer_sync, interval_sync, filter_string, usb_handle_cmd).await
     });
     
     // Spawn node firmware update manager
@@ -94,6 +110,9 @@ async fn main() -> Result<()> {
     // Wait for any task to complete (they should run indefinitely)
     tokio::select! {
         result = usb_task => {
+            error!("USB manager task ended: {:?}", result);
+        }
+        result = collector_task => {
             error!("USB collector task ended: {:?}", result);
         }
         result = sync_task => {

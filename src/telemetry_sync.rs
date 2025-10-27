@@ -1,6 +1,7 @@
 use crate::command_executor::{self, Command};
 use crate::config::Config;
 use crate::log_entry::LogEntry;
+use crate::usb_manager::UsbHandle;
 use anyhow::Result;
 use log::{debug, error, info, warn};
 use serde::Serialize;
@@ -21,6 +22,7 @@ pub async fn run(
     buffer: Arc<RwLock<Vec<LogEntry>>>,
     upload_interval: Arc<RwLock<Duration>>,
     filter_string: Arc<RwLock<String>>,
+    usb_handle: UsbHandle,
 ) -> Result<()> {
     let client = reqwest::Client::builder()
         .use_rustls_tls()
@@ -33,7 +35,7 @@ pub async fn run(
         
         sleep(interval_duration).await;
         
-        match upload_telemetry(&client, &config, &buffer, &filter_string).await {
+        match upload_telemetry(&client, &config, &buffer, &filter_string, &usb_handle).await {
             Ok(_) => {
                 backoff_ms = INITIAL_BACKOFF_MS;
             }
@@ -51,6 +53,7 @@ async fn upload_telemetry(
     config: &Config,
     buffer: &Arc<RwLock<Vec<LogEntry>>>,
     filter_string: &Arc<RwLock<String>>,
+    usb_handle: &UsbHandle,
 ) -> Result<()> {
     // Prepare request with buffered logs
     let logs = {
@@ -98,7 +101,7 @@ async fn upload_telemetry(
     
     // Execute commands
     for command in commands {
-        if let Err(e) = command_executor::execute_command(command, config, filter_string).await {
+        if let Err(e) = command_executor::execute_command(command, config, filter_string, usb_handle).await {
             error!("Command execution error: {}", e);
         }
     }

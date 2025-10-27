@@ -1,13 +1,12 @@
 use crate::config::Config;
 use crate::update_manager;
+use crate::usb_manager::UsbHandle;
 use anyhow::Result;
 use log::{info, warn};
 use serde::Deserialize;
 use std::sync::Arc;
-use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tokio::time::Duration;
-use tokio_serial::SerialPortBuilderExt;
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -41,8 +40,9 @@ pub struct Command {
 
 pub async fn execute_command(
     command: Command,
-    config: &Config,
+    _config: &Config,
     filter_string: &Arc<RwLock<String>>,
+    usb_handle: &UsbHandle,
 ) -> Result<()> {
     info!("Executing command: {}", command.command);
     
@@ -89,7 +89,7 @@ pub async fn execute_command(
                 }
             };
             
-            send_usb_command(&config.usb_port, usb_command).await?;
+            usb_handle.send_command(usb_command.to_string()).await?;
             info!("Set log level to {}", level);
         }
         
@@ -106,9 +106,9 @@ pub async fn execute_command(
         
         "run_command" => {
             if !params.command.is_empty() {
-                send_usb_command(&config.usb_port, &params.command).await?;
+                usb_handle.send_command(params.command).await?;
             } else if !params.value.is_empty() {
-                send_usb_command(&config.usb_port, &params.value).await?;
+                usb_handle.send_command(params.value).await?;
             }
         }
         
@@ -134,16 +134,6 @@ pub async fn execute_command(
             warn!("Unknown command: {}", command.command);
         }
     }
-    
-    Ok(())
-}
-
-async fn send_usb_command(port: &str, command: &str) -> Result<()> {
-    let mut port = tokio_serial::new(port, 115200)
-        .open_native_async()?;
-    
-    port.write_all(format!("{}\r\n", command).as_bytes()).await?;
-    port.flush().await?;
     
     Ok(())
 }
