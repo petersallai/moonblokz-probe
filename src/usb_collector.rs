@@ -3,7 +3,7 @@ use crate::log_entry::LogEntry;
 use crate::usb_manager::UsbMessage;
 use anyhow::Result;
 use chrono::Utc;
-use log::{debug, info, trace};
+use log::{info, trace};
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 

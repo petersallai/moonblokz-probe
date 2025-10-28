@@ -16,6 +16,228 @@ A headless Rust daemon that runs on a Raspberry Pi Zero and acts as the bridge b
 - Raspberry Pi Zero (or compatible device)
 - RP2040-based MoonBlokz node connected via USB
 
+## Raspberry Pi Zero Setup
+
+This section provides the probe-specific setup steps for a Raspberry Pi Zero running Raspberry Pi OS Lite. It assumes you already have the OS installed and SSH access configured.
+
+### Prerequisites
+
+- Raspberry Pi Zero W or Zero 2 W with Raspberry Pi OS Lite installed
+- SSH access to the Pi
+- RP2040 node connected via USB
+- Internet connectivity configured
+
+### System Configuration
+
+#### 1. Configure USB Serial Access
+
+Grant the user permission to access USB serial devices:
+
+```bash
+sudo usermod -a -G dialout $USER
+```
+
+**Important**: Log out and log back in for group changes to take effect:
+```bash
+exit
+# SSH back in
+ssh pi@<raspberry-pi-ip>
+```
+
+Verify the RP2040 node is detected:
+```bash
+ls -l /dev/ttyACM*
+```
+
+You should see output like:
+```
+crw-rw---- 1 root dialout 166, 0 Oct 27 10:30 /dev/ttyACM0
+```
+
+#### 2. Configure Passwordless Sudo for Required Operations
+
+The probe needs passwordless sudo for:
+- Rebooting the system (`reboot`)
+- Mounting/unmounting filesystems (for node firmware updates)
+
+Edit the sudoers file:
+```bash
+sudo visudo
+```
+
+Add the following lines at the end:
+```
+# Allow moonblokz-probe to reboot without password
+pi ALL=(ALL) NOPASSWD: /sbin/reboot
+
+# Allow moonblokz-probe to mount/umount for firmware updates
+pi ALL=(ALL) NOPASSWD: /bin/mount
+pi ALL=(ALL) NOPASSWD: /bin/umount
+```
+
+Save and exit (Ctrl+X, then Y, then Enter in nano).
+
+Test passwordless reboot:
+```bash
+sudo reboot
+```
+
+#### 3. Create Working Directory Structure
+
+```bash
+mkdir -p ~/moonblokz-probe/deployed
+cd ~/moonblokz-probe
+```
+
+### Installing the Probe
+
+#### 1. Transfer the Pre-Compiled Binary
+
+From your development machine, copy the cross-compiled binary to the Raspberry Pi:
+
+```bash
+# On your development machine
+scp target/release/moonblokz-probe pi@<raspberry-pi-ip>:~/moonblokz-probe/
+```
+
+Or if cross-compiled for ARM:
+```bash
+scp target/armv7-unknown-linux-gnueabihf/release/moonblokz-probe pi@<raspberry-pi-ip>:~/moonblokz-probe/
+```
+
+Make the binary executable:
+```bash
+chmod +x ~/moonblokz-probe/moonblokz-probe
+```
+
+#### 2. Create Configuration File
+
+```bash
+cp config.toml.example config.toml
+nano config.toml
+```
+
+Edit the configuration according to your setup:
+
+```toml
+# USB serial port for the RP2040 node
+usb_port = "/dev/ttyACM0"
+
+# Telemetry hub URL
+server_url = "https://your-telemetry-hub.example.com"
+
+# API key for authentication
+api_key = "your-secret-api-key-here"
+
+# Unique node identifier
+node_id = 1001
+
+# Firmware update URLs
+node_firmware_url = "https://firmware.example.com/node"
+probe_firmware_url = "https://firmware.example.com/probe"
+
+# Upload interval in seconds
+upload_interval_seconds = 300
+
+# Maximum buffer size
+buffer_size = 10000
+
+# Log filter (empty = no filtering)
+filter_string = ""
+
+# Log level (error, warn, info, debug, trace)
+log_level = "info"
+```
+
+Save and exit (Ctrl+X, Y, Enter).
+
+#### 3. Test the Probe
+
+Run the probe manually to verify it works:
+
+```bash
+./moonblokz-probe --config config.toml
+```
+
+You should see log output indicating:
+- USB connection established
+- Configuration loaded
+- Telemetry sync starting
+- Update managers initialized
+
+Press Ctrl+C to stop.
+
+### Configuring Automatic Startup
+
+#### 1. Create Systemd Service File
+
+```bash
+sudo nano /etc/systemd/system/moonblokz-probe.service
+```
+
+Add the following content:
+
+```ini
+[Unit]
+Description=MoonBlokz Probe - RP2040 Telemetry Bridge
+Documentation=https://github.com/yourusername/moonblokz-probe
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+WorkingDirectory=/home/pi/moonblokz-probe
+ExecStart=/home/pi/moonblokz-probe/moonblokz-probe --config /home/pi/moonblokz-probe/config.toml
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Save and exit.
+
+#### 2. Enable and Start the Service
+
+```bash
+# Reload systemd to recognize the new service
+sudo systemctl daemon-reload
+
+# Enable the service to start on boot
+sudo systemctl enable moonblokz-probe
+
+# Start the service now
+sudo systemctl start moonblokz-probe
+
+# Check the status
+sudo systemctl status moonblokz-probe
+```
+
+You should see output indicating the service is "active (running)".
+
+#### 3. View Logs
+
+Monitor the probe's operation:
+
+```bash
+# View live logs
+sudo journalctl -u moonblokz-probe -f
+
+# View recent logs
+sudo journalctl -u moonblokz-probe -n 100
+
+# View logs since last boot
+sudo journalctl -u moonblokz-probe -b
+```
+
 ## Configuration
 
 1. Copy the example configuration file:

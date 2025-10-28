@@ -1,4 +1,5 @@
 use crate::config::Config;
+use crate::usb_manager::UsbHandle;
 use anyhow::Result;
 use log::{debug, error, info, warn};
 use serde::Deserialize;
@@ -19,16 +20,16 @@ struct VersionInfo {
     checksum: String,
 }
 
-pub async fn run_node_update(config: Arc<Config>) -> Result<()> {
+pub async fn run_node_update(config: Arc<Config>, usb_handle: UsbHandle) -> Result<()> {
     // Check on startup
-    if let Err(e) = check_and_update_node_firmware(&config).await {
+    if let Err(e) = check_and_update_node_firmware(&config, &usb_handle).await {
         error!("Node firmware update check failed: {}", e);
     }
     
     loop {
         sleep(Duration::from_secs(CHECK_INTERVAL_SECONDS)).await;
         
-        if let Err(e) = check_and_update_node_firmware(&config).await {
+        if let Err(e) = check_and_update_node_firmware(&config, &usb_handle).await {
             error!("Node firmware update check failed: {}", e);
         }
     }
@@ -49,7 +50,7 @@ pub async fn run_probe_update(config: Arc<Config>) -> Result<()> {
     }
 }
 
-async fn check_and_update_node_firmware(config: &Config) -> Result<()> {
+async fn check_and_update_node_firmware(config: &Config, usb_handle: &UsbHandle) -> Result<()> {
     // Fetch version info
     let version_url = format!("{}/version.json", config.node_firmware_url);
     let response = reqwest::get(&version_url).await?;
@@ -89,7 +90,7 @@ async fn check_and_update_node_firmware(config: &Config) -> Result<()> {
     
     // Enter bootloader mode
     info!("Entering bootloader mode...");
-    send_usb_command(&config.usb_port, "/BS").await?;
+    usb_handle.send_command("/BS".to_string()).await?;
     
     // Wait for bootloader device to appear
     sleep(Duration::from_secs(5)).await;
@@ -283,19 +284,6 @@ async fn cleanup_old_probe_versions(current: u32) -> Result<()> {
             }
         }
     }
-    
-    Ok(())
-}
-
-async fn send_usb_command(port: &str, command: &str) -> Result<()> {
-    use tokio::io::AsyncWriteExt;
-    use tokio_serial::SerialPortBuilderExt;
-    
-    let mut port = tokio_serial::new(port, 115200)
-        .open_native_async()?;
-    
-    port.write_all(format!("{}\r\n", command).as_bytes()).await?;
-    port.flush().await?;
     
     Ok(())
 }

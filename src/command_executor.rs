@@ -2,11 +2,36 @@ use crate::config::Config;
 use crate::update_manager;
 use crate::usb_manager::UsbHandle;
 use anyhow::Result;
-use log::{info, warn};
+use chrono::{DateTime, Utc};
+use log::{error, info, warn};
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::Duration;
+
+/// Schedule for upload intervals with active/inactive periods
+#[derive(Debug, Clone)]
+pub struct UploadSchedule {
+    pub start_time: Option<DateTime<Utc>>,
+    pub end_time: Option<DateTime<Utc>>,
+    pub active_period: u64,
+    pub inactive_period: u64,
+}
+
+impl UploadSchedule {
+    /// Calculate the current upload interval based on whether we're in the active window
+    pub fn current_interval(&self) -> u64 {
+        if let (Some(start), Some(end)) = (self.start_time, self.end_time) {
+            let now = Utc::now();
+            if now >= start && now <= end {
+                // We're in the active window
+                return self.active_period;
+            }
+        }
+        // Outside the active window (or no window defined)
+        self.inactive_period
+    }
+}
 
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
@@ -42,6 +67,7 @@ pub async fn execute_command(
     command: Command,
     _config: &Config,
     filter_string: &Arc<RwLock<String>>,
+    upload_interval: &Arc<RwLock<Duration>>,
     usb_handle: &UsbHandle,
 ) -> Result<()> {
     info!("Executing command: {}", command.command);
@@ -61,12 +87,63 @@ pub async fn execute_command(
     
     match command.command.as_str() {
         "set_update_interval" => {
-            // TODO: Implement dynamic scheduling based on time windows
-            // For now, just use active_period as the new interval
-            if params.active_period > 0 {
-                info!("Setting upload interval to {} seconds", params.active_period);
-                // This would need to be passed back to the main loop
-                // For now, just log it
+            // Parse time parameters
+            let start_time = if !params.start_time.is_empty() {
+                match DateTime::parse_from_rfc3339(&params.start_time) {
+                    Ok(dt) => Some(dt.with_timezone(&Utc)),
+                    Err(e) => {
+                        error!("Failed to parse start_time '{}': {}", params.start_time, e);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            
+            let end_time = if !params.end_time.is_empty() {
+                match DateTime::parse_from_rfc3339(&params.end_time) {
+                    Ok(dt) => Some(dt.with_timezone(&Utc)),
+                    Err(e) => {
+                        error!("Failed to parse end_time '{}': {}", params.end_time, e);
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+            
+            // Validate periods
+            if params.active_period == 0 && params.inactive_period == 0 {
+                warn!("set_update_interval requires at least one period to be set");
+                return Ok(());
+            }
+            
+            // Create schedule
+            let schedule = UploadSchedule {
+                start_time,
+                end_time,
+                active_period: if params.active_period > 0 { params.active_period } else { params.inactive_period },
+                inactive_period: if params.inactive_period > 0 { params.inactive_period } else { params.active_period },
+            };
+            
+            // Calculate current interval based on schedule
+            let current_interval_secs = schedule.current_interval();
+            *upload_interval.write().await = Duration::from_secs(current_interval_secs);
+            
+            if let (Some(start), Some(end)) = (start_time, end_time) {
+                info!(
+                    "Set upload interval: active={}s (from {} to {}), inactive={}s. Current: {}s",
+                    params.active_period,
+                    start.to_rfc3339(),
+                    end.to_rfc3339(),
+                    params.inactive_period,
+                    current_interval_secs
+                );
+            } else {
+                info!(
+                    "Set upload interval to {} seconds (no time window specified)",
+                    current_interval_secs
+                );
             }
         }
         

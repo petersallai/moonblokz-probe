@@ -35,7 +35,7 @@ pub async fn run(
         
         sleep(interval_duration).await;
         
-        match upload_telemetry(&client, &config, &buffer, &filter_string, &usb_handle).await {
+        match upload_telemetry(&client, &config, &buffer, &filter_string, &upload_interval, &usb_handle).await {
             Ok(_) => {
                 backoff_ms = INITIAL_BACKOFF_MS;
             }
@@ -53,6 +53,7 @@ async fn upload_telemetry(
     config: &Config,
     buffer: &Arc<RwLock<Vec<LogEntry>>>,
     filter_string: &Arc<RwLock<String>>,
+    upload_interval: &Arc<RwLock<Duration>>,
     usb_handle: &UsbHandle,
 ) -> Result<()> {
     // Prepare request with buffered logs
@@ -101,7 +102,7 @@ async fn upload_telemetry(
     
     // Execute commands
     for command in commands {
-        if let Err(e) = command_executor::execute_command(command, config, filter_string, usb_handle).await {
+        if let Err(e) = command_executor::execute_command(command, config, filter_string, upload_interval, usb_handle).await {
             error!("Command execution error: {}", e);
         }
     }

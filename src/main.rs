@@ -80,6 +80,7 @@ async fn main() -> Result<()> {
     let config_node_update = Arc::clone(&config_sync);
     let config_probe_update = Arc::clone(&config_sync);
     let usb_handle_cmd = usb_handle.clone();
+    let usb_handle_node_update = usb_handle.clone();
     
     // Spawn USB manager task
     let usb_manager = UsbManager::new(config.usb_port.clone(), usb_cmd_rx, usb_msg_tx);
@@ -99,7 +100,7 @@ async fn main() -> Result<()> {
     
     // Spawn node firmware update manager
     let node_update_task = tokio::spawn(async move {
-        update_manager::run_node_update(config_node_update).await
+        update_manager::run_node_update(config_node_update, usb_handle_node_update).await
     });
     
     // Spawn probe self-update manager
