@@ -24,17 +24,15 @@ pub async fn run(
     filter_string: Arc<RwLock<String>>,
     usb_handle: UsbHandle,
 ) -> Result<()> {
-    let client = reqwest::Client::builder()
-        .use_rustls_tls()
-        .build()?;
-    
+    let client = reqwest::Client::builder().use_rustls_tls().build()?;
+
     let mut backoff_ms = INITIAL_BACKOFF_MS;
-    
+
     loop {
         let interval_duration = *upload_interval.read().await;
-        
+
         sleep(interval_duration).await;
-        
+
         match upload_telemetry(&client, &config, &buffer, &filter_string, &upload_interval, &usb_handle).await {
             Ok(_) => {
                 backoff_ms = INITIAL_BACKOFF_MS;
@@ -61,11 +59,17 @@ async fn upload_telemetry(
         let buf = buffer.read().await;
         buf.clone()
     };
-    
+
+    // Skip upload if there are no log entries
+    if logs.is_empty() {
+        debug!("No log entries to upload, skipping");
+        return Ok(());
+    }
+
     debug!("Uploading {} log entries to hub", logs.len());
-    
+
     let request_body = UploadRequest { logs };
-    
+
     // Send request
     let url = format!("{}/update", config.server_url);
     let response = client
@@ -76,16 +80,16 @@ async fn upload_telemetry(
         .json(&request_body)
         .send()
         .await?;
-    
+
     let status = response.status();
-    
+
     if !status.is_success() {
         warn!("Upload failed with status: {}", status);
         return Err(anyhow::anyhow!("Non-success status: {}", status));
     }
-    
+
     info!("Successfully uploaded telemetry");
-    
+
     // Parse response commands
     let commands: Vec<Command> = match response.json().await {
         Ok(cmds) => cmds,
@@ -96,16 +100,16 @@ async fn upload_telemetry(
             return Ok(());
         }
     };
-    
+
     // Clear buffer after successful upload
     buffer.write().await.clear();
-    
+
     // Execute commands
     for command in commands {
         if let Err(e) = command_executor::execute_command(command, config, filter_string, upload_interval, usb_handle).await {
             error!("Command execution error: {}", e);
         }
     }
-    
+
     Ok(())
 }
