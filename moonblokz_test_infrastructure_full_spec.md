@@ -250,12 +250,20 @@ Two asynchronous tasks manage firmware updates:
    temporary location.
 4. Compute the CRC‑32 checksum of the downloaded file and compare it
    with the expected value.  Abort on mismatch.
-5. Send `/BS\r\n` to the node to enter bootloader mode, wait until a
-   USB mass‑storage device appears and mount it (requires privileges).
-6. Copy the UF2 file to the mounted volume.  The device will reboot
-   automatically.  Unmount and remove the temporary file.
-7. Move the new UF2 into `deployed/` and remove old versions.  Update
-   internal state so future checks know the new version.
+5. Send `/BS\r\n` to the node to enter bootloader mode.
+6. Wait for the USB mass‑storage device to appear (polling `/dev` for
+   devices with filesystem label "RPI-RP2", timeout after 30 seconds).
+7. Mount the detected bootloader device at `/tmp/rpi-rp2-bootloader`
+   using `sudo mount -t vfat` (requires passwordless sudo privileges).
+8. Copy the UF2 file to the mounted volume as `firmware.uf2`.
+9. Execute `sync` command to ensure all data is written to disk.
+10. Unmount the bootloader device using `sudo umount`.  The device will
+    reboot automatically upon unmount.
+11. Move the new UF2 into `deployed/` and remove old versions.  Update
+    internal state so future checks know the new version.
+12. If any step in the update process fails (device detection timeout,
+    mount failure, copy failure), the probe MUST reboot the Raspberry Pi
+    using `sudo reboot` to recover to a clean state.
 
 #### Probe self‑update
 
