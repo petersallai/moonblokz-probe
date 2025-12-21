@@ -60,12 +60,7 @@ async fn upload_telemetry(
         buf.clone()
     };
 
-    // Skip upload if there are no log entries
-    if logs.is_empty() {
-        debug!("No log entries to upload, skipping");
-        return Ok(());
-    }
-
+    // Always upload, even with empty logs - hub response may contain commands
     debug!("Uploading {} log entries to hub", logs.len());
 
     let request_body = UploadRequest { logs };

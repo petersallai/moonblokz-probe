@@ -173,7 +173,7 @@ pub async fn execute_command(
             info!("Set log level to {}", level);
         }
 
-        "set_filter" => {
+        "set_log_filter" => {
             let new_filter = if !params.log_filter.is_empty() { params.log_filter } else { params.value };
 
             info!("Setting filter to: {}", new_filter);
