@@ -14,10 +14,7 @@ const DEPLOYED_DIR: &str = "deployed";
 #[derive(Debug, Deserialize)]
 struct VersionInfo {
     version: u32,
-    #[serde(default)]
     crc32: String,
-    #[serde(default)]
-    checksum: String,
 }
 
 pub async fn run_node_update(config: Arc<Config>, usb_handle: UsbHandle) -> Result<()> {
@@ -84,12 +81,10 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
     let response = reqwest::get(&firmware_url).await?;
     let firmware_data = response.bytes().await?;
 
-    // Verify checksum
+    // Verify CRC32
     let computed_crc = crc32fast::hash(&firmware_data);
-    let expected_crc = u32::from_str_radix(&version_info.crc32, 16).unwrap_or_else(|_| {
-        warn!("Could not parse CRC32, skipping verification");
-        computed_crc
-    });
+    let expected_crc =
+        u32::from_str_radix(&version_info.crc32, 16).map_err(|_| anyhow::anyhow!("Invalid CRC32 format in version.json: {}", version_info.crc32))?;
 
     if computed_crc != expected_crc {
         return Err(anyhow::anyhow!("CRC32 mismatch: expected {:x}, got {:x}", expected_crc, computed_crc));
@@ -170,17 +165,13 @@ async fn check_and_update_probe(config: &Config) -> Result<()> {
     let response = reqwest::get(&binary_url).await?;
     let binary_data = response.bytes().await?;
 
-    // Verify checksum if provided
-    if !version_info.checksum.is_empty() {
-        let computed_crc = crc32fast::hash(&binary_data);
-        let expected_crc = u32::from_str_radix(&version_info.checksum, 16).unwrap_or_else(|_| {
-            warn!("Could not parse checksum, skipping verification");
-            computed_crc
-        });
+    // Verify CRC32
+    let computed_crc = crc32fast::hash(&binary_data);
+    let expected_crc =
+        u32::from_str_radix(&version_info.crc32, 16).map_err(|_| anyhow::anyhow!("Invalid CRC32 format in version.json: {}", version_info.crc32))?;
 
-        if computed_crc != expected_crc {
-            return Err(anyhow::anyhow!("Checksum mismatch"));
-        }
+    if computed_crc != expected_crc {
+        return Err(anyhow::anyhow!("CRC32 mismatch: expected {:x}, got {:x}", expected_crc, computed_crc));
     }
 
     // Save to deployed directory
