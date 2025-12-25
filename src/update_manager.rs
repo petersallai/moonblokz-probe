@@ -3,13 +3,14 @@ use crate::usb_manager::UsbHandle;
 use anyhow::Result;
 use log::{debug, error, info, warn};
 use serde::Deserialize;
+use std::error::Error;
 use std::sync::Arc;
 use tokio::fs;
 use tokio::process::Command;
 use tokio::time::{sleep, Duration};
 
 const CHECK_INTERVAL_SECONDS: u64 = 3600; // Check every hour
-const DEPLOYED_DIR: &str = "deployed";
+const DEPLOYED_DIR: &str = "node_firmware";
 
 #[derive(Debug, Deserialize)]
 struct VersionInfo {
@@ -36,6 +37,9 @@ pub async fn run_probe_update(config: Arc<Config>) -> Result<()> {
     // Check on startup
     if let Err(e) = check_and_update_probe(&config).await {
         error!("Probe update check failed: {}", e);
+        if let Some(source) = e.source() {
+            error!("  Caused by: {}", source);
+        }
     }
 
     loop {
@@ -43,11 +47,14 @@ pub async fn run_probe_update(config: Arc<Config>) -> Result<()> {
 
         if let Err(e) = check_and_update_probe(&config).await {
             error!("Probe update check failed: {}", e);
+            if let Some(source) = e.source() {
+                error!("  Caused by: {}", source);
+            }
         }
     }
 }
 
-async fn check_and_update_node_firmware(config: &Config, usb_handle: &UsbHandle) -> Result<()> {
+pub async fn check_and_update_node_firmware(config: &Config, usb_handle: &UsbHandle) -> Result<()> {
     // Fetch version info
     let version_url = format!("{}/version.json", config.node_firmware_url);
     let response = reqwest::get(&version_url).await?;
@@ -67,8 +74,8 @@ async fn check_and_update_node_firmware(config: &Config, usb_handle: &UsbHandle)
     // Wrap the update process to handle failures with reboot
     if let Err(e) = perform_node_firmware_update(config, usb_handle, &version_info).await {
         error!("Node firmware update failed: {}. Rebooting system to recover...", e);
-        sleep(Duration::from_secs(2)).await;
-        let _ = reboot_system().await;
+        //sleep(Duration::from_secs(2)).await;
+        //let _ = reboot_system().await;
         return Err(e);
     }
 
@@ -77,7 +84,7 @@ async fn check_and_update_node_firmware(config: &Config, usb_handle: &UsbHandle)
 
 async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, version_info: &VersionInfo) -> Result<()> {
     // Download new firmware
-    let firmware_url = format!("{}/moonblokz_{}.uf2", config.node_firmware_url, version_info.version);
+    let firmware_url = format!("{}/moonblokz_node_{}.uf2", config.node_firmware_url, version_info.version);
     let response = reqwest::get(&firmware_url).await?;
     let firmware_data = response.bytes().await?;
 
@@ -91,12 +98,12 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
     }
 
     // Save to temporary file
-    let temp_file = format!("/tmp/moonblokz_{}.uf2", version_info.version);
+    let temp_file = format!("/tmp/moonblokz_node_{}.uf2", version_info.version);
     fs::write(&temp_file, &firmware_data).await?;
 
     // Enter bootloader mode
     info!("Entering bootloader mode...");
-    usb_handle.send_command("/BS".to_string()).await?;
+    usb_handle.send_command("/BS\r\n".to_string()).await?;
 
     // Wait for bootloader device to appear and detect it
     info!("Waiting for bootloader device to appear...");
@@ -105,6 +112,8 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
 
     // Mount the bootloader device
     let mount_point = "/tmp/rpi-rp2-bootloader";
+    // Delete and recreate the mount point directory to ensure clean state
+    let _ = fs::remove_dir_all(mount_point).await;
     fs::create_dir_all(mount_point).await?;
 
     info!("Mounting bootloader at {}...", mount_point);
@@ -113,11 +122,19 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
     // Copy firmware to the mounted bootloader
     let firmware_dest = format!("{}/firmware.uf2", mount_point);
     info!("Copying firmware to bootloader...");
-    if let Err(e) = fs::copy(&temp_file, &firmware_dest).await {
+    let copy_status = Command::new("sudo").arg("cp").arg(&temp_file).arg(&firmware_dest).status().await;
+
+    if let Err(e) = copy_status {
         error!("Failed to copy firmware to bootloader: {}", e);
         // Try to unmount before returning error
         let _ = unmount_bootloader(mount_point).await;
         return Err(e.into());
+    }
+
+    if !copy_status.unwrap().success() {
+        error!("Failed to copy firmware to bootloader: copy command failed");
+        let _ = unmount_bootloader(mount_point).await;
+        return Err(anyhow::anyhow!("Failed to copy firmware to bootloader"));
     }
 
     // Sync to ensure data is written
@@ -132,7 +149,7 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
 
     // Move to deployed directory
     fs::create_dir_all(DEPLOYED_DIR).await?;
-    let deployed_file = format!("{}/moonblokz_{}.uf2", DEPLOYED_DIR, version_info.version);
+    let deployed_file = format!("{}/moonblokz_node_{}.uf2", DEPLOYED_DIR, version_info.version);
     fs::rename(&temp_file, &deployed_file).await?;
 
     // Clean up old versions
@@ -143,10 +160,11 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
     Ok(())
 }
 
-async fn check_and_update_probe(config: &Config) -> Result<()> {
+pub async fn check_and_update_probe(config: &Config) -> Result<()> {
     // Fetch version info
     let version_url = format!("{}/version.json", config.probe_firmware_url);
     let response = reqwest::get(&version_url).await?;
+    log::debug!("Fetched probe version.json: {:?}", response);
     let version_info: VersionInfo = response.json().await?;
 
     // Determine current version
@@ -174,9 +192,9 @@ async fn check_and_update_probe(config: &Config) -> Result<()> {
         return Err(anyhow::anyhow!("CRC32 mismatch: expected {:x}, got {:x}", expected_crc, computed_crc));
     }
 
-    // Save to deployed directory
-    fs::create_dir_all(DEPLOYED_DIR).await?;
-    let new_binary = format!("{}/moonblokz_probe_{}", DEPLOYED_DIR, version_info.version);
+    // Save to currrent directory
+    fs::create_dir_all(".").await?;
+    let new_binary = format!("./moonblokz_probe_{}", version_info.version);
     fs::write(&new_binary, &binary_data).await?;
 
     debug!("Wrote new probe binary to {}", new_binary);
@@ -225,9 +243,9 @@ async fn get_current_node_version() -> Result<u32> {
         let filename = entry.file_name();
         let filename_str = filename.to_string_lossy();
 
-        if filename_str.starts_with("moonblokz_") && filename_str.ends_with(".uf2") {
+        if filename_str.starts_with("moonblokz_node_") && filename_str.ends_with(".uf2") {
             // Extract version number
-            let version_str = filename_str.trim_start_matches("moonblokz_").trim_end_matches(".uf2");
+            let version_str = filename_str.trim_start_matches("moonblokz_node_").trim_end_matches(".uf2");
 
             if let Ok(version) = version_str.parse::<u32>() {
                 return Ok(version);
@@ -239,7 +257,7 @@ async fn get_current_node_version() -> Result<u32> {
 }
 
 async fn get_current_probe_version() -> Result<u32> {
-    let mut entries = fs::read_dir(DEPLOYED_DIR).await?;
+    let mut entries = fs::read_dir(".").await?;
 
     while let Some(entry) = entries.next_entry().await? {
         let filename = entry.file_name();
@@ -265,7 +283,7 @@ async fn cleanup_old_node_versions(current: u32) -> Result<()> {
         let filename = entry.file_name();
         let filename_str = filename.to_string_lossy();
 
-        if filename_str.starts_with("moonblokz_") && filename_str.ends_with(".uf2") {
+        if filename_str.starts_with("moonblokz_node") && filename_str.ends_with(".uf2") {
             let version_str = filename_str.trim_start_matches("moonblokz_").trim_end_matches(".uf2");
 
             if let Ok(version) = version_str.parse::<u32>() {
@@ -281,7 +299,7 @@ async fn cleanup_old_node_versions(current: u32) -> Result<()> {
 }
 
 async fn cleanup_old_probe_versions(current: u32) -> Result<()> {
-    let mut entries = fs::read_dir(DEPLOYED_DIR).await?;
+    let mut entries = fs::read_dir(".").await?;
 
     while let Some(entry) = entries.next_entry().await? {
         let filename = entry.file_name();
@@ -382,12 +400,12 @@ async fn mount_bootloader(device: &str, mount_point: &str) -> Result<()> {
 
 /// Unmount the bootloader device
 async fn unmount_bootloader(mount_point: &str) -> Result<()> {
-    let status = Command::new("sudo").arg("umount").arg(mount_point).status().await?;
+    /*     let status = Command::new("sudo").arg("umount").arg(mount_point).status().await?;
 
-    if !status.success() {
-        return Err(anyhow::anyhow!("Failed to unmount bootloader device"));
-    }
-
+        if !status.success() {
+            return Err(anyhow::anyhow!("Failed to unmount bootloader device"));
+        }
+    */
     Ok(())
 }
 

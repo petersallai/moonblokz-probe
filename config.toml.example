@@ -25,7 +25,7 @@ upload_interval_seconds = 300
 buffer_size = 10000
 
 # Initial filter string (empty means no filtering)
-filter_string = ""
+filter_string = "*TM"
 
 # Log level (error, warn, info, debug, trace, default: info)
 log_level = "info"

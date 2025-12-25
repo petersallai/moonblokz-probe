@@ -190,14 +190,16 @@ pub async fn execute_command(
 
         "update_node" => {
             info!("Triggering node firmware update...");
-            // In a real implementation, we would signal the update manager
-            // For now, the update manager runs on its own schedule
+            if let Err(e) = update_manager::check_and_update_node_firmware(_config, usb_handle).await {
+                error!("Node firmware update failed: {}", e);
+            }
         }
 
         "update_probe" => {
             info!("Triggering probe self-update...");
-            // In a real implementation, we would signal the update manager
-            // For now, the update manager runs on its own schedule
+            if let Err(e) = update_manager::check_and_update_probe(_config).await {
+                error!("Probe update failed: {}", e);
+            }
         }
 
         "reboot_probe" => {
