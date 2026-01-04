@@ -101,13 +101,32 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
     let temp_file = format!("/tmp/moonblokz_node_{}.uf2", version_info.version);
     fs::write(&temp_file, &firmware_data).await?;
 
-    // Enter bootloader mode
-    info!("Entering bootloader mode...");
-    usb_handle.send_command("/BS\r\n".to_string()).await?;
+    // Enter bootloader mode with retry logic
+    const MAX_BOOTLOADER_RETRIES: u32 = 5;
+    let mut bootloader_device = None;
 
-    // Wait for bootloader device to appear and detect it
-    info!("Waiting for bootloader device to appear...");
-    let bootloader_device = wait_for_bootloader_device().await?;
+    for attempt in 1..=MAX_BOOTLOADER_RETRIES {
+        info!("Entering bootloader mode (attempt {}/{})...", attempt, MAX_BOOTLOADER_RETRIES);
+        usb_handle.send_command("/BS\r\n".to_string()).await?;
+
+        // Wait for bootloader device to appear and detect it
+        info!("Waiting for bootloader device to appear...");
+        match wait_for_bootloader_device().await {
+            Ok(device) => {
+                bootloader_device = Some(device);
+                break;
+            }
+            Err(e) => {
+                if attempt < MAX_BOOTLOADER_RETRIES {
+                    warn!("Bootloader device not detected: {}. Retrying...", e);
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    let bootloader_device = bootloader_device.ok_or_else(|| anyhow::anyhow!("Failed to detect bootloader device after {} attempts", MAX_BOOTLOADER_RETRIES))?;
     info!("Bootloader device detected: {}", bootloader_device);
 
     // Mount the bootloader device
@@ -147,10 +166,11 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
     // Wait for device to reboot and reconnect
     sleep(Duration::from_secs(5)).await;
 
-    // Move to deployed directory
+    // Move to deployed directory (use copy+remove since /tmp may be a different filesystem)
     fs::create_dir_all(DEPLOYED_DIR).await?;
     let deployed_file = format!("{}/moonblokz_node_{}.uf2", DEPLOYED_DIR, version_info.version);
-    fs::rename(&temp_file, &deployed_file).await?;
+    fs::copy(&temp_file, &deployed_file).await?;
+    let _ = fs::remove_file(&temp_file).await;
 
     // Clean up old versions
     cleanup_old_node_versions(version_info.version).await?;

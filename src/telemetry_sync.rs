@@ -4,7 +4,7 @@ use crate::log_entry::LogEntry;
 use crate::usb_manager::UsbHandle;
 use anyhow::Result;
 use log::{debug, error, info, warn};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{sleep, Duration};
@@ -15,6 +15,12 @@ const MAX_BACKOFF_MS: u64 = 60000;
 #[derive(Debug, Serialize)]
 struct UploadRequest {
     logs: Vec<LogEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UpdateResponse {
+    commands: Vec<Command>,
+    update_interval: u64,
 }
 
 pub async fn run(
@@ -85,11 +91,11 @@ async fn upload_telemetry(
 
     info!("Successfully uploaded telemetry");
 
-    // Parse response commands
-    let commands: Vec<Command> = match response.json().await {
-        Ok(cmds) => cmds,
+    // Parse response
+    let update_response: UpdateResponse = match response.json().await {
+        Ok(resp) => resp,
         Err(e) => {
-            warn!("Failed to parse response commands: {}. Logs considered delivered.", e);
+            warn!("Failed to parse response: {}. Logs considered delivered.", e);
             // Clear buffer anyway since logs were delivered
             buffer.write().await.clear();
             return Ok(());
@@ -99,8 +105,16 @@ async fn upload_telemetry(
     // Clear buffer after successful upload
     buffer.write().await.clear();
 
+    // Update the upload interval from server response
+    let new_interval = Duration::from_secs(update_response.update_interval);
+    let old_interval = *upload_interval.read().await;
+    if new_interval != old_interval {
+        *upload_interval.write().await = new_interval;
+        info!("Updated upload interval from server: {} seconds", update_response.update_interval);
+    }
+
     // Execute commands
-    for command in commands {
+    for command in update_response.commands {
         if let Err(e) = command_executor::execute_command(command, config, filter_string, upload_interval, usb_handle).await {
             error!("Command execution error: {}", e);
         }
