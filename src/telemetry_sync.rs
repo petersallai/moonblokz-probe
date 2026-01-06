@@ -1,8 +1,10 @@
 use crate::command_executor::{self, Command};
 use crate::config::Config;
 use crate::log_entry::LogEntry;
+use crate::update_manager;
 use crate::usb_manager::UsbHandle;
 use anyhow::Result;
+use chrono;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -61,10 +63,18 @@ async fn upload_telemetry(
     usb_handle: &UsbHandle,
 ) -> Result<()> {
     // Prepare request with buffered logs
-    let logs = {
+    let mut logs = {
         let buf = buffer.read().await;
         buf.clone()
     };
+
+    // Add telemetry log line with version information
+    let probe_version = update_manager::get_current_probe_version().await.unwrap_or(0);
+    let node_version = update_manager::get_current_node_version().await.unwrap_or(0);
+    let telemetry_message = format!("[{}] *TM8* probe_version: {}, node_version: {}", config.node_id, probe_version, node_version);
+    let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let telemetry_entry = LogEntry::new(timestamp, telemetry_message);
+    logs.push(telemetry_entry);
 
     // Always upload, even with empty logs - hub response may contain commands
     debug!("Uploading {} log entries to hub", logs.len());

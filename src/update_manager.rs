@@ -256,7 +256,7 @@ pub async fn check_and_update_probe(config: &Config) -> Result<()> {
     Ok(())
 }
 
-async fn get_current_node_version() -> Result<u32> {
+pub async fn get_current_node_version() -> Result<u32> {
     let mut entries = fs::read_dir(DEPLOYED_DIR).await?;
 
     while let Some(entry) = entries.next_entry().await? {
@@ -276,7 +276,7 @@ async fn get_current_node_version() -> Result<u32> {
     Ok(0) // No version found
 }
 
-async fn get_current_probe_version() -> Result<u32> {
+pub async fn get_current_probe_version() -> Result<u32> {
     let mut entries = fs::read_dir(".").await?;
 
     while let Some(entry) = entries.next_entry().await? {
