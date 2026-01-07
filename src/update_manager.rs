@@ -303,8 +303,8 @@ async fn cleanup_old_node_versions(current: u32) -> Result<()> {
         let filename = entry.file_name();
         let filename_str = filename.to_string_lossy();
 
-        if filename_str.starts_with("moonblokz_node") && filename_str.ends_with(".uf2") {
-            let version_str = filename_str.trim_start_matches("moonblokz_").trim_end_matches(".uf2");
+        if filename_str.starts_with("moonblokz_node_") && filename_str.ends_with(".uf2") {
+            let version_str = filename_str.trim_start_matches("moonblokz_node_").trim_end_matches(".uf2");
 
             if let Ok(version) = version_str.parse::<u32>() {
                 if version < current {
@@ -448,4 +448,92 @@ pub async fn reboot_system() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Recover a node that appears to be stuck in bootloader mode.
+/// This is called when the USB port has been disconnected for 5 minutes,
+/// indicating the node may be waiting for firmware in bootloader mode.
+/// Copies the current deployed firmware to the bootloader device.
+pub async fn recover_node_from_bootloader() -> Result<()> {
+    info!("Attempting to recover node from bootloader mode...");
+
+    // Check if bootloader device is present
+    let bootloader_device = match wait_for_bootloader_device().await {
+        Ok(device) => {
+            info!("Found bootloader device: {}", device);
+            device
+        }
+        Err(e) => {
+            debug!("No bootloader device found: {}", e);
+            return Err(anyhow::anyhow!("No bootloader device found - node may not be in bootloader mode"));
+        }
+    };
+
+    // Get the current deployed firmware file
+    let firmware_file = match get_deployed_firmware_path().await {
+        Some(path) => {
+            info!("Using deployed firmware: {}", path);
+            path
+        }
+        None => {
+            return Err(anyhow::anyhow!("No deployed firmware found in {} directory", DEPLOYED_DIR));
+        }
+    };
+
+    // Mount the bootloader device
+    let mount_point = "/tmp/rpi-rp2-bootloader";
+    let _ = fs::remove_dir_all(mount_point).await;
+    fs::create_dir_all(mount_point).await?;
+
+    info!("Mounting bootloader at {}...", mount_point);
+    mount_bootloader(&bootloader_device, mount_point).await?;
+
+    // Copy firmware to the mounted bootloader
+    let firmware_dest = format!("{}/firmware.uf2", mount_point);
+    info!("Copying firmware to bootloader...");
+    let copy_status = Command::new("sudo").arg("cp").arg(&firmware_file).arg(&firmware_dest).status().await;
+
+    if let Err(e) = copy_status {
+        error!("Failed to copy firmware to bootloader: {}", e);
+        let _ = unmount_bootloader(mount_point).await;
+        return Err(e.into());
+    }
+
+    if !copy_status.unwrap().success() {
+        error!("Failed to copy firmware to bootloader: copy command failed");
+        let _ = unmount_bootloader(mount_point).await;
+        return Err(anyhow::anyhow!("Failed to copy firmware to bootloader"));
+    }
+
+    // Sync to ensure data is written
+    sync_filesystem().await?;
+
+    // Unmount the bootloader (device will reboot automatically)
+    info!("Unmounting bootloader...");
+    unmount_bootloader(mount_point).await?;
+
+    // Wait for device to reboot and reconnect
+    info!("Node firmware recovery completed, waiting for device to reboot...");
+    tokio::time::sleep(Duration::from_secs(5)).await;
+
+    Ok(())
+}
+
+/// Get the path to the currently deployed firmware file
+async fn get_deployed_firmware_path() -> Option<String> {
+    let mut entries = match fs::read_dir(DEPLOYED_DIR).await {
+        Ok(entries) => entries,
+        Err(_) => return None,
+    };
+
+    while let Some(entry) = entries.next_entry().await.ok().flatten() {
+        let filename = entry.file_name();
+        let filename_str = filename.to_string_lossy();
+
+        if filename_str.starts_with("moonblokz_node_") && filename_str.ends_with(".uf2") {
+            return Some(entry.path().to_string_lossy().to_string());
+        }
+    }
+
+    None
 }

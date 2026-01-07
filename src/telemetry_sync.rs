@@ -99,8 +99,6 @@ async fn upload_telemetry(
         return Err(anyhow::anyhow!("Non-success status: {}", status));
     }
 
-    info!("Successfully uploaded telemetry");
-
     // Parse response
     let update_response: UpdateResponse = match response.json().await {
         Ok(resp) => resp,
@@ -111,6 +109,12 @@ async fn upload_telemetry(
             return Ok(());
         }
     };
+
+    info!(
+        "Successfully uploaded telemetry with {} log entries, {} commands received",
+        request_body.logs.len(),
+        update_response.commands.len()
+    );
 
     // Clear buffer after successful upload
     buffer.write().await.clear();
