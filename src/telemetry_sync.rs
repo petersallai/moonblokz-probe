@@ -71,8 +71,11 @@ async fn upload_telemetry(
     // Add telemetry log line with version information
     let probe_version = update_manager::get_current_probe_version().await.unwrap_or(0);
     let node_version = update_manager::get_current_node_version().await.unwrap_or(0);
-    let telemetry_message = format!("[{}] *TM8* probe_version: {}, node_version: {}", config.node_id, probe_version, node_version);
     let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let telemetry_message = format!(
+        "[INFO] moonblokz_probe: [{}] *TM8* probe_version: {}, node_version: {}",
+        config.node_id, probe_version, node_version
+    );
     let telemetry_entry = LogEntry::new(timestamp, telemetry_message);
     logs.push(telemetry_entry);
 
