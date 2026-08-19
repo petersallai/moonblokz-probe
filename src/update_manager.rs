@@ -63,17 +63,26 @@ pub async fn check_and_update_node_firmware(config: &Config, usb_handle: &UsbHan
     // Determine current version
     let current_version = get_current_node_version().await?;
 
-    info!("Node firmware - Current: {}, Latest: {}", current_version, version_info.version);
+    info!(
+        "Node firmware - Current: {}, Latest: {}",
+        current_version, version_info.version
+    );
 
     if version_info.version <= current_version {
         return Ok(());
     }
 
-    info!("Updating node firmware to version {}...", version_info.version);
+    info!(
+        "Updating node firmware to version {}...",
+        version_info.version
+    );
 
     // Wrap the update process to handle failures with reboot
     if let Err(e) = perform_node_firmware_update(config, usb_handle, &version_info).await {
-        error!("Node firmware update failed: {}. Rebooting system to recover...", e);
+        error!(
+            "Node firmware update failed: {}. Rebooting system to recover...",
+            e
+        );
         //sleep(Duration::from_secs(2)).await;
         //let _ = reboot_system().await;
         return Err(e);
@@ -82,19 +91,34 @@ pub async fn check_and_update_node_firmware(config: &Config, usb_handle: &UsbHan
     Ok(())
 }
 
-async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, version_info: &VersionInfo) -> Result<()> {
+async fn perform_node_firmware_update(
+    config: &Config,
+    usb_handle: &UsbHandle,
+    version_info: &VersionInfo,
+) -> Result<()> {
     // Download new firmware
-    let firmware_url = format!("{}/moonblokz_node_{}.uf2", config.node_firmware_url, version_info.version);
+    let firmware_url = format!(
+        "{}/moonblokz_node_{}.uf2",
+        config.node_firmware_url, version_info.version
+    );
     let response = reqwest::get(&firmware_url).await?;
     let firmware_data = response.bytes().await?;
 
     // Verify CRC32
     let computed_crc = crc32fast::hash(&firmware_data);
-    let expected_crc =
-        u32::from_str_radix(&version_info.crc32, 16).map_err(|_| anyhow::anyhow!("Invalid CRC32 format in version.json: {}", version_info.crc32))?;
+    let expected_crc = u32::from_str_radix(&version_info.crc32, 16).map_err(|_| {
+        anyhow::anyhow!(
+            "Invalid CRC32 format in version.json: {}",
+            version_info.crc32
+        )
+    })?;
 
     if computed_crc != expected_crc {
-        return Err(anyhow::anyhow!("CRC32 mismatch: expected {:x}, got {:x}", expected_crc, computed_crc));
+        return Err(anyhow::anyhow!(
+            "CRC32 mismatch: expected {:x}, got {:x}",
+            expected_crc,
+            computed_crc
+        ));
     }
 
     // Save to temporary file
@@ -106,7 +130,10 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
     let mut bootloader_device = None;
 
     for attempt in 1..=MAX_BOOTLOADER_RETRIES {
-        info!("Entering bootloader mode (attempt {}/{})...", attempt, MAX_BOOTLOADER_RETRIES);
+        info!(
+            "Entering bootloader mode (attempt {}/{})...",
+            attempt, MAX_BOOTLOADER_RETRIES
+        );
         usb_handle.send_command("/BS\r\n".to_string()).await?;
 
         // Wait for bootloader device to appear and detect it
@@ -126,7 +153,12 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
         }
     }
 
-    let bootloader_device = bootloader_device.ok_or_else(|| anyhow::anyhow!("Failed to detect bootloader device after {} attempts", MAX_BOOTLOADER_RETRIES))?;
+    let bootloader_device = bootloader_device.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Failed to detect bootloader device after {} attempts",
+            MAX_BOOTLOADER_RETRIES
+        )
+    })?;
     info!("Bootloader device detected: {}", bootloader_device);
 
     // Mount the bootloader device
@@ -141,7 +173,12 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
     // Copy firmware to the mounted bootloader
     let firmware_dest = format!("{}/firmware.uf2", mount_point);
     info!("Copying firmware to bootloader...");
-    let copy_status = Command::new("sudo").arg("cp").arg(&temp_file).arg(&firmware_dest).status().await;
+    let copy_status = Command::new("sudo")
+        .arg("cp")
+        .arg(&temp_file)
+        .arg(&firmware_dest)
+        .status()
+        .await;
 
     if let Err(e) = copy_status {
         error!("Failed to copy firmware to bootloader: {}", e);
@@ -168,14 +205,20 @@ async fn perform_node_firmware_update(config: &Config, usb_handle: &UsbHandle, v
 
     // Move to deployed directory (use copy+remove since /tmp may be a different filesystem)
     fs::create_dir_all(DEPLOYED_DIR).await?;
-    let deployed_file = format!("{}/moonblokz_node_{}.uf2", DEPLOYED_DIR, version_info.version);
+    let deployed_file = format!(
+        "{}/moonblokz_node_{}.uf2",
+        DEPLOYED_DIR, version_info.version
+    );
     fs::copy(&temp_file, &deployed_file).await?;
     let _ = fs::remove_file(&temp_file).await;
 
     // Clean up old versions
     cleanup_old_node_versions(version_info.version).await?;
 
-    info!("Node firmware updated successfully to version {}", version_info.version);
+    info!(
+        "Node firmware updated successfully to version {}",
+        version_info.version
+    );
 
     Ok(())
 }
@@ -190,7 +233,10 @@ pub async fn check_and_update_probe(config: &Config) -> Result<()> {
     // Determine current version
     let current_version = get_current_probe_version().await?;
 
-    info!("Probe - Current: {}, Latest: {}", current_version, version_info.version);
+    info!(
+        "Probe - Current: {}, Latest: {}",
+        current_version, version_info.version
+    );
 
     if version_info.version <= current_version {
         return Ok(());
@@ -199,17 +245,28 @@ pub async fn check_and_update_probe(config: &Config) -> Result<()> {
     info!("Updating probe to version {}...", version_info.version);
 
     // Download new binary
-    let binary_url = format!("{}/moonblokz_probe_{}", config.probe_firmware_url, version_info.version);
+    let binary_url = format!(
+        "{}/moonblokz_probe_{}",
+        config.probe_firmware_url, version_info.version
+    );
     let response = reqwest::get(&binary_url).await?;
     let binary_data = response.bytes().await?;
 
     // Verify CRC32
     let computed_crc = crc32fast::hash(&binary_data);
-    let expected_crc =
-        u32::from_str_radix(&version_info.crc32, 16).map_err(|_| anyhow::anyhow!("Invalid CRC32 format in version.json: {}", version_info.crc32))?;
+    let expected_crc = u32::from_str_radix(&version_info.crc32, 16).map_err(|_| {
+        anyhow::anyhow!(
+            "Invalid CRC32 format in version.json: {}",
+            version_info.crc32
+        )
+    })?;
 
     if computed_crc != expected_crc {
-        return Err(anyhow::anyhow!("CRC32 mismatch: expected {:x}, got {:x}", expected_crc, computed_crc));
+        return Err(anyhow::anyhow!(
+            "CRC32 mismatch: expected {:x}, got {:x}",
+            expected_crc,
+            computed_crc
+        ));
     }
 
     // Save to currrent directory
@@ -246,7 +303,10 @@ pub async fn check_and_update_probe(config: &Config) -> Result<()> {
     // Clean up old versions
     cleanup_old_probe_versions(version_info.version).await?;
 
-    info!("Probe updated successfully to version {}", version_info.version);
+    info!(
+        "Probe updated successfully to version {}",
+        version_info.version
+    );
     info!("Rebooting in 5 seconds...");
     sleep(Duration::from_secs(5)).await;
 
@@ -265,7 +325,9 @@ pub async fn get_current_node_version() -> Result<u32> {
 
         if filename_str.starts_with("moonblokz_node_") && filename_str.ends_with(".uf2") {
             // Extract version number
-            let version_str = filename_str.trim_start_matches("moonblokz_node_").trim_end_matches(".uf2");
+            let version_str = filename_str
+                .trim_start_matches("moonblokz_node_")
+                .trim_end_matches(".uf2");
 
             if let Ok(version) = version_str.parse::<u32>() {
                 return Ok(version);
@@ -304,7 +366,9 @@ async fn cleanup_old_node_versions(current: u32) -> Result<()> {
         let filename_str = filename.to_string_lossy();
 
         if filename_str.starts_with("moonblokz_node_") && filename_str.ends_with(".uf2") {
-            let version_str = filename_str.trim_start_matches("moonblokz_node_").trim_end_matches(".uf2");
+            let version_str = filename_str
+                .trim_start_matches("moonblokz_node_")
+                .trim_end_matches(".uf2");
 
             if let Ok(version) = version_str.parse::<u32>() {
                 if version < current {
@@ -372,7 +436,9 @@ async fn wait_for_bootloader_device() -> Result<String> {
         }
     }
 
-    Err(anyhow::anyhow!("Timeout waiting for bootloader device to appear"))
+    Err(anyhow::anyhow!(
+        "Timeout waiting for bootloader device to appear"
+    ))
 }
 
 /// Check if a device is the RP2040 bootloader by examining its properties
@@ -465,7 +531,9 @@ pub async fn recover_node_from_bootloader() -> Result<()> {
         }
         Err(e) => {
             debug!("No bootloader device found: {}", e);
-            return Err(anyhow::anyhow!("No bootloader device found - node may not be in bootloader mode"));
+            return Err(anyhow::anyhow!(
+                "No bootloader device found - node may not be in bootloader mode"
+            ));
         }
     };
 
@@ -476,7 +544,10 @@ pub async fn recover_node_from_bootloader() -> Result<()> {
             path
         }
         None => {
-            return Err(anyhow::anyhow!("No deployed firmware found in {} directory", DEPLOYED_DIR));
+            return Err(anyhow::anyhow!(
+                "No deployed firmware found in {} directory",
+                DEPLOYED_DIR
+            ));
         }
     };
 
@@ -491,7 +562,12 @@ pub async fn recover_node_from_bootloader() -> Result<()> {
     // Copy firmware to the mounted bootloader
     let firmware_dest = format!("{}/firmware.uf2", mount_point);
     info!("Copying firmware to bootloader...");
-    let copy_status = Command::new("sudo").arg("cp").arg(&firmware_file).arg(&firmware_dest).status().await;
+    let copy_status = Command::new("sudo")
+        .arg("cp")
+        .arg(&firmware_file)
+        .arg(&firmware_dest)
+        .status()
+        .await;
 
     if let Err(e) = copy_status {
         error!("Failed to copy firmware to bootloader: {}", e);

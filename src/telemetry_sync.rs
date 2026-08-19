@@ -41,12 +41,24 @@ pub async fn run(
 
         sleep(interval_duration).await;
 
-        match upload_telemetry(&client, &config, &buffer, &filter_string, &upload_interval, &usb_handle).await {
+        match upload_telemetry(
+            &client,
+            &config,
+            &buffer,
+            &filter_string,
+            &upload_interval,
+            &usb_handle,
+        )
+        .await
+        {
             Ok(_) => {
                 backoff_ms = INITIAL_BACKOFF_MS;
             }
             Err(e) => {
-                error!("Telemetry upload error: {}. Retrying in {}ms...", e, backoff_ms);
+                error!(
+                    "Telemetry upload error: {}. Retrying in {}ms...",
+                    e, backoff_ms
+                );
                 sleep(Duration::from_millis(backoff_ms)).await;
                 backoff_ms = (backoff_ms * 2).min(MAX_BACKOFF_MS);
             }
@@ -69,8 +81,12 @@ async fn upload_telemetry(
     };
 
     // Add telemetry log line with version information
-    let probe_version = update_manager::get_current_probe_version().await.unwrap_or(0);
-    let node_version = update_manager::get_current_node_version().await.unwrap_or(0);
+    let probe_version = update_manager::get_current_probe_version()
+        .await
+        .unwrap_or(0);
+    let node_version = update_manager::get_current_node_version()
+        .await
+        .unwrap_or(0);
     let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
     let telemetry_message = format!(
         "[INFO] moonblokz_probe: [{}] *TM8* probe_version: {}, node_version: {}",
@@ -106,7 +122,10 @@ async fn upload_telemetry(
     let update_response: UpdateResponse = match response.json().await {
         Ok(resp) => resp,
         Err(e) => {
-            warn!("Failed to parse response: {}. Logs considered delivered.", e);
+            warn!(
+                "Failed to parse response: {}. Logs considered delivered.",
+                e
+            );
             // Clear buffer anyway since logs were delivered
             buffer.write().await.clear();
             return Ok(());
@@ -127,12 +146,23 @@ async fn upload_telemetry(
     let old_interval = *upload_interval.read().await;
     if new_interval != old_interval {
         *upload_interval.write().await = new_interval;
-        info!("Updated upload interval from server: {} seconds", update_response.update_interval);
+        info!(
+            "Updated upload interval from server: {} seconds",
+            update_response.update_interval
+        );
     }
 
     // Execute commands
     for command in update_response.commands {
-        if let Err(e) = command_executor::execute_command(command, config, filter_string, upload_interval, usb_handle).await {
+        if let Err(e) = command_executor::execute_command(
+            command,
+            config,
+            filter_string,
+            upload_interval,
+            usb_handle,
+        )
+        .await
+        {
             error!("Command execution error: {}", e);
         }
     }

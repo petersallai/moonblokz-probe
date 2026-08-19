@@ -11,7 +11,11 @@ use tokio::sync::{mpsc, RwLock};
 // Open /home/moonblok/node.log for writing (append if exists)
 // This should be done asynchronously using tokio
 async fn open_node_log() -> anyhow::Result<tokio::fs::File> {
-    let file = OpenOptions::new().create(true).append(true).open("/home/moonblokz/node.log").await?;
+    let file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("/home/moonblokz/node.log")
+        .await?;
     Ok(file)
 }
 
