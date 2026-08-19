@@ -41,18 +41,23 @@ pub async fn execute_command(
 ) -> Result<()> {
     info!("Executing command: {}", command.command);
 
-    let params: CommandParameters = serde_json::from_value(command.parameters).unwrap_or_else(|_| CommandParameters {
-        level: String::new(),
-        log_level: String::new(),
-        value: String::new(),
-        log_filter: String::new(),
-        command: String::new(),
-        sequence: 0,
-    });
+    let params: CommandParameters =
+        serde_json::from_value(command.parameters).unwrap_or_else(|_| CommandParameters {
+            level: String::new(),
+            log_level: String::new(),
+            value: String::new(),
+            log_filter: String::new(),
+            command: String::new(),
+            sequence: 0,
+        });
 
     match command.command.as_str() {
         "set_log_level" => {
-            let level = if !params.log_level.is_empty() { &params.log_level } else { &params.level };
+            let level = if !params.log_level.is_empty() {
+                &params.log_level
+            } else {
+                &params.level
+            };
 
             let usb_command = match level.to_uppercase().as_str() {
                 "TRACE" => "/LT",
@@ -71,7 +76,11 @@ pub async fn execute_command(
         }
 
         "set_log_filter" => {
-            let new_filter = if !params.log_filter.is_empty() { params.log_filter } else { params.value };
+            let new_filter = if !params.log_filter.is_empty() {
+                params.log_filter
+            } else {
+                params.value
+            };
 
             info!("Setting filter to: {}", new_filter);
             *filter_string.write().await = new_filter;
@@ -87,7 +96,9 @@ pub async fn execute_command(
 
         "update_node" => {
             info!("Triggering node firmware update...");
-            if let Err(e) = update_manager::check_and_update_node_firmware(_config, usb_handle).await {
+            if let Err(e) =
+                update_manager::check_and_update_node_firmware(_config, usb_handle).await
+            {
                 error!("Node firmware update failed: {}", e);
             }
         }

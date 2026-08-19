@@ -34,7 +34,11 @@ pub struct UsbManager {
 }
 
 impl UsbManager {
-    pub fn new(port_path: String, command_rx: mpsc::Receiver<UsbCommand>, message_tx: mpsc::Sender<UsbMessage>) -> Self {
+    pub fn new(
+        port_path: String,
+        command_rx: mpsc::Receiver<UsbCommand>,
+        message_tx: mpsc::Sender<UsbMessage>,
+    ) -> Self {
         Self {
             port_path,
             command_rx,
@@ -57,7 +61,10 @@ impl UsbManager {
                     recovery_attempted = false;
                 }
                 Err(e) => {
-                    error!("USB connection error: {}. Retrying in {}ms...", e, backoff_ms);
+                    error!(
+                        "USB connection error: {}. Retrying in {}ms...",
+                        e, backoff_ms
+                    );
                     let _ = self.message_tx.send(UsbMessage::Disconnected).await;
 
                     // Track disconnection time
@@ -69,7 +76,9 @@ impl UsbManager {
                     // Check if we've been disconnected for 5 minutes
                     if let Some(since) = disconnected_since {
                         let disconnected_duration = since.elapsed();
-                        if disconnected_duration.as_secs() >= BOOTLOADER_RECOVERY_TIMEOUT_SECS && !recovery_attempted {
+                        if disconnected_duration.as_secs() >= BOOTLOADER_RECOVERY_TIMEOUT_SECS
+                            && !recovery_attempted
+                        {
                             warn!(
                                 "USB disconnected for {} seconds, attempting bootloader recovery...",
                                 disconnected_duration.as_secs()
@@ -77,10 +86,14 @@ impl UsbManager {
                             recovery_attempted = true;
 
                             // Try to recover node stuck in bootloader mode
-                            if let Err(e) = crate::update_manager::recover_node_from_bootloader().await {
+                            if let Err(e) =
+                                crate::update_manager::recover_node_from_bootloader().await
+                            {
                                 error!("Bootloader recovery failed: {}", e);
                             } else {
-                                info!("Bootloader recovery completed, resetting connection tracking");
+                                info!(
+                                    "Bootloader recovery completed, resetting connection tracking"
+                                );
                                 disconnected_since = None;
                                 backoff_ms = INITIAL_BACKOFF_MS;
                             }
